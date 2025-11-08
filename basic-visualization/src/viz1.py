@@ -73,7 +73,7 @@ def mne_from_brainflow(args, config):
 
 def compose_and_filter_raw(args, config):
     raw = mne_from_brainflow(args, config)
-    raw.set_montage("biosemi32", on_missing="ignore", verbose=args.verbose)
+    raw.set_montage("standard_1020", on_missing="ignore", verbose=args.verbose)
 
     # Apply bandpass filter as specified in config file
     raw.filter(l_freq=config["fmin"], h_freq=config["fmax"], verbose=args.verbose)
