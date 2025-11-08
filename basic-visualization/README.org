@@ -1,0 +1,32 @@
+#+title: Readme
+
+* Introduction
+
+Toolset to visualize Brainflow data using MNE tools. Initially created for visualization of the measurements of 06-11-25 done in Leuven.
+
+* Usage
+
+** Optional (but recommended)
+
+Create a virtual environment:
+
+#+begin_src bash
+python -m venv myenv
+source myenv/bin/activate
+#+end_src
+
+** Dependencies
+
+#+begin_src bash
+pip install -r requirements.txt
+#+end_src
+
+
+** Usage
+
+#+begin_src bash
+$ python viz1.py -c config.yaml  -f ~/delme/20251106_EEG/251106-2056_FREEEEG32_BOARD_c1_f34_v100.csv --crop 4
+Plotting power spectral density (dB=True).
+Channels marked as bad:
+none
+#+end_src
