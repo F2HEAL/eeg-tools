@@ -1,0 +1,21 @@
+# Channel Mapping, based on:
+# T7	CH01
+# C3	CH02
+# T8	CH05
+# FC4	CH06
+# FC3	CH09
+# C4	CH10
+# CP3	CH13
+# CP4	CH14
+#           1    2    3    4    5    6    7    8
+channels: [ T7,  UC3,  U1,  U2,  UT8,  UFC4, U3,  U4,
+            UFC3, UC4,  U5,  U6,  UCP3, UCP4, U7,  U8,
+            U9,  U10, U11, U12, U13, U14, U15, U16,
+            U17, U18, U19, U20, U21, U22, U23, U24 ]
+
+# Bandpass filter applied on raw signal
+fmin: 3
+fmax: 200
+
+# Main frequencies to be notch'ed out
+freqs_main: [ 50, 100, 150 ]
