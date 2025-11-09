@@ -40,7 +40,7 @@ $ python viz1.py  -c config-calibration.yaml  -f 251108-2228_FREEEEG32_BOARD_bas
 
 * Conclusion
 
-Stick with the fixed 512Hz sampling rate. Interpolation is not needed and creates artifacts. 
+When reading out a Mentalab device with Brainflow (EXPLORE_8_CHAN_BOARD) the sample rate is rather variable and needs interpolation. For the FreeEEG32 this is not the case. It's better to stick with the fixed 512Hz sampling rate. Interpolation is not needed and creates artifacts. 
 
 
 
