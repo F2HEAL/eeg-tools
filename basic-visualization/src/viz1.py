@@ -1,24 +1,32 @@
 #!/usr/bin/env python3
+"""Read CSV produced by brainflow (with FreeEEG32 device) and create timeseries
+and PSD using MNE
 
+"""
+
+
+import os
 import argparse
 import yaml
-import numpy as np
 import pandas as pd
 import mne
+
 
 import matplotlib.pyplot as plt
 
 
 def read_yaml_config(args):
+    """Read YAML and return as config object"""
     if args.verbose:
         print(f"* Reading config from {args.config}")
 
-    with open(args.config, "r") as file:
+    with open(args.config, encoding="utf8") as file:
         config = yaml.safe_load(file)
     return config
 
 
 def parse_args():
+    """Parse cmdline, read config and return as args,config objects"""
     parser = argparse.ArgumentParser(description="My script description.")
 
     parser.add_argument("-f", "--file", type=str, required=True, help="Input file path")
@@ -50,11 +58,14 @@ def parse_args():
 
 
 def mne_from_brainflow(args, config):
+    """Read Brainflow CSV and return as MNE Raw object"""
     if args.verbose:
         print(f"* Reading Brainflow CSV from {args.file}")
 
     csv_file = args.file
     data_in = pd.read_csv(csv_file, sep="\t", header=None).values.T
+
+    # Convert from brainflow (V) to MNE (uV)
     data = data_in[1 : len(config["channels"]) + 1] * 1e-6
 
     ch_types = ["eeg"] * len(config["channels"])  # Assuming all are EEG channels
@@ -72,6 +83,7 @@ def mne_from_brainflow(args, config):
 
 
 def compose_and_filter_raw(args, config):
+    """Create MNE raw object and apply pre-processing"""
     raw = mne_from_brainflow(args, config)
     raw.set_montage("standard_1020", on_missing="ignore", verbose=args.verbose)
 
@@ -80,14 +92,6 @@ def compose_and_filter_raw(args, config):
 
     # Apply notch filter for mains as specified in config file
     raw.notch_filter(freqs=config["freqs_main"], verbose=args.verbose)
-
-    return raw
-
-
-def main():
-    args, config = parse_args()
-
-    raw = compose_and_filter_raw(args, config)
 
     # crop if requested from cmd-line
     if args.crop and args.crop > 0:
@@ -100,9 +104,22 @@ def main():
     if args.average:
         raw.set_eeg_reference(ref_channels="average", verbose=args.verbose)
 
-    # raw.plot(scalings="auto", bad_color="red", verbose=args.verbose)
-    raw.plot(scalings={"eeg": 50e-5}, bad_color="red", verbose=args.verbose)
-    raw.compute_psd(fmin=0, fmax=200, verbose=args.verbose).plot()
+    return raw
+
+
+def main():
+    """Main actions"""
+    args, config = parse_args()
+
+    raw = compose_and_filter_raw(args, config)
+
+    raw.plot(
+        scalings={"eeg": 50e-5},
+        bad_color="red",
+        title=os.path.basename(args.file),
+        verbose=args.verbose,
+    )
+    raw.compute_psd(fmin=0, fmax=200, method="welch", verbose=args.verbose).plot()
     plt.show()
 
 
