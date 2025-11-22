@@ -324,47 +324,57 @@ def main():
     plt.show(block=True)
 
     # ---------------------------
-    # DEVICE SIGNAL QUALITY CHECK
+    # DEVICE SIGNAL QUALITY CHECK (MNE-native)
     # ---------------------------
     print("\n=== DEVICE SIGNAL QUALITY CHECK ===")
     print("Computing PSD…")
     psd_obj = raw.compute_psd(fmin=1, fmax=200, method="welch", verbose=args.verbose)
     print("PSD done.")
 
-    freqs = psd_obj.freqs
-    psd_all = psd_obj.get_data()
-    data_all = raw.get_data()
+    freqs = psd_obj.freqs          # frequency vector
+    psd_all = psd_obj.get_data()   # shape: (n_channels, n_freqs)
+    data_all = raw.get_data()      # shape: (n_channels, n_times)
     ch_names = raw.ch_names
 
-    avg_bands = [0] * 6
+    # Helper function for band power
+    def band_power(freqs, psd, f1, f2):
+        """Integrate PSD between f1 and f2 using trapezoidal rule."""
+        import numpy as np
+        mask = (freqs >= f1) & (freqs <= f2)
+        if not np.any(mask):
+            return 0.0
+        return np.trapz(psd[mask], freqs[mask])
 
     for i, ch in enumerate(ch_names):
         sig = data_all[i]
 
+        # --- Time-domain features ---
         ptp = max(sig) - min(sig)
         rms = (sum(v**2 for v in sig)/len(sig))**0.5
         dc  = sum(sig)/len(sig)
         diffs = [abs(sig[j+1]-sig[j]) for j in range(len(sig)-1)]
         flat = sum(1 for d in diffs if d < 3e-6) / len(diffs)
 
+        # Kurtosis & skew
         k = kurtosis(sig)
         s = skew(sig)
 
+        # --- Spectral features ---
         psd_ch = psd_all[i]
         entropy = spectral_entropy(psd_ch)
         ln      = line_noise_ratio(freqs, psd_ch)
 
-        delta = band_power(freqs, psd_ch, 1.0, 4.0)
-        theta = band_power(freqs, psd_ch, 4.0, 8.0)
-        alpha = band_power(freqs, psd_ch, 8, 13)
-        beta  = band_power(freqs, psd_ch, 13, 30)
-        gamma = band_power(freqs, psd_ch, 30, 60)
-        h_gamma = band_power(freqs, psd_ch, 60, 98)
-
-        avg_bands = [sum(x) for x in zip(avg_bands, [delta, theta, alpha, beta, gamma, h_gamma])]
+        # Band powers in µV²
+        delta   = band_power(freqs, psd_ch, 1.0, 4.0) * 1e12
+        theta   = band_power(freqs, psd_ch, 4.0, 8.0) * 1e12
+        alpha   = band_power(freqs, psd_ch, 8.0, 13.0) * 1e12
+        beta    = band_power(freqs, psd_ch, 13.0, 30.0) * 1e12
+        gamma   = band_power(freqs, psd_ch, 30.0, 60.0) * 1e12
+        h_gamma = band_power(freqs, psd_ch, 60.0, 98.0) * 1e12
 
         muscle_ratio = gamma / (alpha + beta + 1e-20)
 
+        # --- Classification ---
         status = "GOOD"
         if ptp < 10e-6:
             status = "SHORTED"
@@ -379,18 +389,22 @@ def main():
         elif entropy > 5.0:
             status = "RANDOM NOISE"
 
+        # Secondary classification based on entropy
         status2 = "UNKNOWN"
         if 2.5 < entropy < 4.8:
             status2 = "HUMAN EEG"
         elif entropy > 4.8:
             status2 = "RANDOM NOISE"
 
+        # --- Print ---
         print(f"{ch:10s} | PTP={ptp*1e6:6.1f} µV | RMS={rms*1e6:6.1f} µV | "
-              f"ET={entropy:4.2f} | LNR={ln:5.2f} dB | MR={muscle_ratio:4.2f} | "
-              f"DC={dc:.1f} | FT={flat:.2f} ||KT={k:.2f} | SK={s:.2f} | {status} | {status2}")
+            f"ET={entropy:4.2f} | LNR={ln:5.2f} dB | MR={muscle_ratio:4.2f} | "
+            f"DC={dc*1e6:6.1f} µV | FT={flat:.2f} | KT={k:.2f} | SK={s:.2f} | {status} | {status2}")
+        print(f"δ: {delta:.2e} | θ: {theta:.2e} | α: {alpha:.2e} | β: {beta:.2e} | γ: {gamma:.2e} | h-γ: {h_gamma:.2e}")
 
     print("=== END DEVICE CHECK ===\n")
 
+ 
     plot_spectrograms(raw, channels=raw.ch_names, f_low=0, f_high=60)
 
 
