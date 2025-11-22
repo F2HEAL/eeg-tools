@@ -12,8 +12,9 @@ import pandas as pd
 import mne
 import numpy as np
 from scipy.stats import kurtosis, skew
-
 import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+from scipy.signal import spectrogram
 
 
 def read_yaml_config(args):
@@ -80,6 +81,24 @@ def mne_from_brainflow(args, config):
 
     raw = mne.io.RawArray(data, info, verbose=args.verbose)
 
+    # ---------------------------
+    # Annotations (if column 34 present)
+    # ---------------------------
+    annotations = None
+    if data_in.shape[1] > 34:
+        events = data_in[34]
+        mask = events != 0
+        onsets = np.arange(len(events)) / sfreq
+        onsets_masked = onsets[mask]
+        descriptions = [str(int(e)) for e in events[mask]]
+        annotations = mne.Annotations(
+            onset=onsets_masked,
+            duration=[1.0/sfreq] * len(onsets_masked),
+            description=descriptions
+        )
+        raw.set_annotations(annotations)
+        print(f"Annotations loaded: {len(onsets_masked)} events")
+
     return raw
 
 
@@ -87,6 +106,11 @@ def compose_and_filter_raw(args, config):
     """Create MNE raw object and apply pre-processing"""
     raw = mne_from_brainflow(args, config)
     raw.set_montage("standard_1020", on_missing="ignore", verbose=args.verbose)
+
+    raw.drop_channels([
+        ch for ch in config["channels"]
+        if ch.startswith("U") and ch not in ("U26", "U30")
+    ])
 
     raw.plot(
         scalings={"eeg": 50e-5},
@@ -107,10 +131,10 @@ def compose_and_filter_raw(args, config):
         tmax = raw.times[-1] - args.crop
         raw = raw.crop(tmin=tmin, tmax=tmax)
 
-    raw.drop_channels([
-        ch for ch in config["channels"]
-        if ch.startswith("U") and ch not in ("U26", "U30")
-    ])
+
+
+    # Print remaining channels
+    print("Remaining channels:", raw.ch_names)
 
     if args.average:
         raw.set_eeg_reference(ref_channels="average", verbose=args.verbose)
@@ -209,6 +233,77 @@ def band_power(freqs, psd, fmin, fmax):
         return 0.0
     return float(np.trapz(psd[idx], freqs[idx]))
 
+def plot_spectrograms(raw, channels=None, f_low=0, f_high=100):
+    """
+    Plot spectrograms per channel with event markers (from annotations) using raw MNE object.
+
+    Parameters
+    ----------
+    raw : mne.io.Raw
+        MNE Raw object (can be unfiltered).
+    channels : list or None
+        List of channel names to plot. If None, plot all EEG channels.
+    f_low : float
+        Lower frequency limit to display.
+    f_high : float
+        Upper frequency limit to display.
+    """
+
+    # Select channels
+    if channels is None:
+        channels = mne.pick_types(raw.info, eeg=True, meg=False, stim=False, exclude='bads')
+        channels = [raw.ch_names[i] for i in channels]
+
+    sfreq = raw.info['sfreq']
+
+    # Extract annotation info if available
+    ann_onsets = []
+    ann_descr = []
+    if hasattr(raw, 'annotations') and raw.annotations is not None:
+        ann_onsets = raw.annotations.onset
+        ann_descr  = raw.annotations.description
+
+    for ch in channels:
+        raw_ch = raw.copy().pick_channels([ch])
+        sig = raw_ch.get_data()[0]
+
+        # Spectrogram parameters
+        nperseg_spec = 4096
+        if nperseg_spec > sig.size:
+            nperseg_spec = max(256, 2 ** int(np.floor(np.log2(sig.size / 8))))
+        noverlap_spec = int(nperseg_spec * 0.75)
+
+        f_spec, t_spec, Sxx = spectrogram(
+            sig, fs=sfreq, nperseg=nperseg_spec, noverlap=noverlap_spec,
+            scaling="density", mode="psd"
+        )
+
+        # Frequency mask
+        mask_spec = (f_spec >= f_low) & (f_spec <= f_high)
+        f_show = f_spec[mask_spec]
+        Sxx_db = 10.0 * np.log10(Sxx[mask_spec, :] + 1e-20)
+
+        # Relative dB normalization
+        Sxx_db_rel = Sxx_db - np.median(Sxx_db)
+
+        # Plot
+        fig, ax = plt.subplots(figsize=(12, 5))
+        pcm = ax.pcolormesh(t_spec, f_show, Sxx_db_rel, shading='gouraud', cmap='inferno')
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Frequency (Hz)")
+        ax.set_ylim(f_low, f_high)
+        ax.set_title(f"Spectrogram: os.path.basename(args.file) \nChannel: {ch}")
+        fig.colorbar(pcm, ax=ax, label="Relative dB")
+
+        # Overlay event markers if any
+        for onset, desc in zip(ann_onsets, ann_descr):
+            if t_spec.min() <= onset <= t_spec.max():
+                ax.axvline(onset, linestyle='--', linewidth=1.0, color='white')
+                y_text = f_low + (f_high - f_low) * 0.02
+                ax.text(onset, y_text, str(desc), rotation=90, verticalalignment='bottom', fontsize=8, color='white')
+
+        plt.tight_layout()
+        plt.show(block=True)
 
 
 
@@ -241,6 +336,8 @@ def main():
     data_all = raw.get_data()
     ch_names = raw.ch_names
 
+    avg_bands = [0] * 6
+
     for i, ch in enumerate(ch_names):
         sig = data_all[i]
 
@@ -250,13 +347,22 @@ def main():
         diffs = [abs(sig[j+1]-sig[j]) for j in range(len(sig)-1)]
         flat = sum(1 for d in diffs if d < 3e-6) / len(diffs)
 
+        k = kurtosis(sig)
+        s = skew(sig)
+
         psd_ch = psd_all[i]
         entropy = spectral_entropy(psd_ch)
         ln      = line_noise_ratio(freqs, psd_ch)
 
+        delta = band_power(freqs, psd_ch, 1.0, 4.0)
+        theta = band_power(freqs, psd_ch, 4.0, 8.0)
         alpha = band_power(freqs, psd_ch, 8, 13)
         beta  = band_power(freqs, psd_ch, 13, 30)
         gamma = band_power(freqs, psd_ch, 30, 60)
+        h_gamma = band_power(freqs, psd_ch, 60, 98)
+
+        avg_bands = [sum(x) for x in zip(avg_bands, [delta, theta, alpha, beta, gamma, h_gamma])]
+
         muscle_ratio = gamma / (alpha + beta + 1e-20)
 
         status = "GOOD"
@@ -281,10 +387,11 @@ def main():
 
         print(f"{ch:10s} | PTP={ptp*1e6:6.1f} µV | RMS={rms*1e6:6.1f} µV | "
               f"ET={entropy:4.2f} | LNR={ln:5.2f} dB | MR={muscle_ratio:4.2f} | "
-              f"DC={dc:.1f} | FT={flat:.2f} | {status} | {status2}")
+              f"DC={dc:.1f} | FT={flat:.2f} ||KT={k:.2f} | SK={s:.2f} | {status} | {status2}")
 
     print("=== END DEVICE CHECK ===\n")
 
+    plot_spectrograms(raw, channels=raw.ch_names, f_low=0, f_high=60)
 
 
 
