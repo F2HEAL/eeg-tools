@@ -8,7 +8,7 @@
 # CP3	CH13
 # CP4	CH14
 #           1    2    3    4    5    6    7    8
-channels: [ T7,  C3,  U1,  U2,  T8,  FC4, U3,  U4,
+channels: [ T7,  C3,  U3,  U4,  T8,  FC4, U7,  U8,
             FC3, C4,  U5,  U6,  CP3, CP4, U7,  U8,
             U9,  U10, U11, U12, U13, U14, U15, U16,
             U17, U18, U19, U20, U21, U22, U23, U24 ]
