@@ -16,6 +16,10 @@ import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt
 from scipy.signal import spectrogram
 
+from mne.time_frequency import tfr_morlet
+
+
+
 
 def read_yaml_config(args):
     """Read YAML and return as config object"""
@@ -292,6 +296,42 @@ def plot_spectrograms(raw, filename, channels=None, f_low=0, f_high=100):
         plt.show(block=True)
 
 
+def plot_spectrograms_mne(raw, filename, fmin=0, fmax=60, picks=None):
+    if picks is None:
+        picks = mne.pick_types(raw.info, eeg=True, exclude='bads')
+
+    # Ensure no zero frequency
+    freqs = np.arange(max(fmin, 1), fmax+1)
+    n_cycles = freqs / 2.0
+
+    tfr = tfr_morlet(
+        raw, picks=picks, freqs=freqs, n_cycles=n_cycles,
+        use_fft=True, return_itc=False, decim=1, average=False
+    )
+
+    for i, ch_idx in enumerate(picks):
+        ch_name = raw.ch_names[ch_idx]
+        data_db = 10 * np.log10(tfr.data[i] + 1e-20)
+
+        plt.figure(figsize=(12, 5))
+        plt.pcolormesh(tfr.times, freqs, data_db, shading='gouraud', cmap='inferno')
+        plt.xlabel("Time (s)")
+        plt.ylabel("Frequency (Hz)")
+        plt.title(f"Spectrogram: {os.path.basename(filename)}\nChannel: {ch_name}")
+        plt.colorbar(label="Power (dB)")
+
+        if raw.annotations is not None:
+            for onset, desc in zip(raw.annotations.onset, raw.annotations.description):
+                if tfr.times.min() <= onset <= tfr.times.max():
+                    plt.axvline(onset, linestyle='--', color='white', linewidth=1)
+                    y_text = freqs.min() + (freqs.max() - freqs.min()) * 0.02
+                    plt.text(onset, y_text, str(desc), rotation=90, verticalalignment='bottom',
+                             fontsize=8, color='white')
+
+        plt.tight_layout()
+        plt.show(block=True)
+
+
 
 def main():
     args, config = parse_args()
@@ -323,6 +363,10 @@ def main():
     psd_all = psd_obj.get_data()  # V²/Hz by default if raw in V
     data_all = raw.get_data()     # signal in V
     ch_names = raw.ch_names
+
+    print("Computing STG…")
+    plot_spectrograms_mne(raw, filename=args.file, fmin=0, fmax=60)
+    print("STG done.")
 
     # Convert PSD from V²/Hz to µV²/Hz for realistic EEG units
     psd_all *= 1e12  # 1 V² = 1e12 µV²
@@ -422,12 +466,6 @@ def main():
         print("\nNo valid channels for band power computation.")
 
     print("=== END DEVICE CHECK ===\n")
-
-
-
- 
-    plot_spectrograms(raw, filename=args.file, channels=raw.ch_names, f_low=0, f_high=60)
-
 
 
 if __name__ == "__main__":
