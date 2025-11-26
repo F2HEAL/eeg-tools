@@ -69,13 +69,15 @@ def mne_from_brainflow(args, config):
         print(f"* Reading Brainflow CSV from {args.file}")
 
     csv_file = args.file
-    data_in = pd.read_csv(csv_file, sep="\t", header=None).values.T
+    #data_in = pd.read_csv(csv_file, sep="\t", header=None).values.T
+    data_in = pd.read_csv(csv_file, sep=",", header=None).values.T
 
     # Convert from brainflow (V) to MNE (uV)
     data = data_in[1 : len(config["channels"]) + 1] * 1e-6
 
     ch_types = ["eeg"] * len(config["channels"])  # Assuming all are EEG channels
-    sfreq = 512
+    #sfreq = 512
+    sfreq = 1000
     info = mne.create_info(
         ch_names=config["channels"],
         sfreq=sfreq,
@@ -88,16 +90,27 @@ def mne_from_brainflow(args, config):
     # ---------------------------
     # Annotations (if column 34 present)
     # ---------------------------
+
     annotations = None
-    if data_in.shape[1] > 34:
-        events = data_in[34]
-        mask = events != 0
+
+    # Ensure we have at least 34 columns (timestamp + 33 EEG + marker)
+    if data_in.shape[1] > 33:
+        events = data_in[33]
+
+        # Mask out NaNs and zeros (no event)
+        mask = (~np.isnan(events)) & (events != 0)
+
+        # Onsets in seconds
         onsets = np.arange(len(events)) / sfreq
         onsets_masked = onsets[mask]
+
+        # Convert only valid event codes to strings
         descriptions = [str(int(e)) for e in events[mask]]
+
+        # Build MNE annotations
         annotations = mne.Annotations(
             onset=onsets_masked,
-            duration=[1.0/sfreq] * len(onsets_masked),
+            duration=[1.0 / sfreq] * len(onsets_masked),
             description=descriptions
         )
         raw.set_annotations(annotations)
@@ -469,3 +482,4 @@ def main():
 
 
 if __name__ == "__main__":
+    main()

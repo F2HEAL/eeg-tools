@@ -14,7 +14,7 @@ channels: [ T7,  C3,  U3,  U4,  T8,  FC4, U7,  U8,
             U25, U26, U27, U28, U29, U30, U31, U32 ]
 
 # Bandpass filter applied on raw signal
-fmin: 1.5
+fmin: 1.5 
 fmax: 200
 
 # Main frequencies to be notch'ed out
