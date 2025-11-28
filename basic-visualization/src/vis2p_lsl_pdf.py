@@ -243,40 +243,91 @@ def plot_spectrograms(raw, filename, pdf, channels=None, f_low=0, f_high=100):
         pdf.savefig(fig)
         plt.close(fig)
 
-def plot_spectrograms_mne(raw, filename, pdf, fmin=0, fmax=60, picks=None):
-    if picks is None:
-        picks = mne.pick_types(raw.info, eeg=True, exclude='bads')
+def plot_spectrograms_mne(raw, filename, pdf, fmin=1, fmax=500, picks=None):
+    """
+    Fast Morlet spectrogram plotting for each EEG channel.
+    """
 
-    freqs = np.arange(max(fmin, 1), fmax+1)
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import mne
+    from mne.time_frequency import tfr_morlet
+    import os
+
+    # ----------------------------------------------------------
+    # Pick channels
+    # ----------------------------------------------------------
+    if picks is None:
+        picks = mne.pick_types(raw.info, eeg=True, exclude="bads")
+
+    # ----------------------------------------------------------
+    # Frequencies (Morlet requires freq > 0!)
+    # ----------------------------------------------------------
+    fmin = max(fmin, 1)
+    freqs = np.arange(fmin, fmax + 1)
+
+    # n_cycles = freq / 2 → stable & reasonably fast
     n_cycles = freqs / 2.0
 
-    tfr = tfr_morlet(
-        raw, picks=picks, freqs=freqs, n_cycles=n_cycles,
-        use_fft=True, return_itc=False, decim=1, average=False
-    )
-
-    for i, ch_idx in enumerate(picks):
+    # ----------------------------------------------------------
+    # Loop over channels to keep memory small
+    # ----------------------------------------------------------
+    for ch_idx in picks:
         ch_name = raw.ch_names[ch_idx]
-        data_db = 10 * np.log10(tfr.data[i] + 1e-20)
 
+        # Compute TFR for THIS channel only
+        tfr = tfr_morlet(
+            raw,
+            picks=[ch_idx],
+            freqs=freqs,
+            n_cycles=n_cycles,
+            use_fft=True,
+            return_itc=False,
+            decim=5,           # << huge speed boost
+            average=False
+        )
+
+        # Convert to dB
+        data_db = 10 * np.log10(tfr.data[0] + 1e-20)
+
+        # ------------------------------------------------------
+        # Plot spectrogram
+        # ------------------------------------------------------
         fig = plt.figure(figsize=(12, 5))
-        plt.pcolormesh(tfr.times, freqs, data_db, shading='gouraud', cmap='inferno')
+        plt.pcolormesh(
+            tfr.times,
+            freqs,
+            data_db,
+            shading="gouraud",
+            cmap="inferno"
+        )
         plt.xlabel("Time (s)")
         plt.ylabel("Frequency (Hz)")
         plt.title(f"Spectrogram (Morlet): {os.path.basename(filename)}\nChannel: {ch_name}")
         plt.colorbar(label="Power (dB)")
 
+        # ------------------------------------------------------
+        # Add annotations like events
+        # ------------------------------------------------------
         if raw.annotations is not None:
             for onset, desc in zip(raw.annotations.onset, raw.annotations.description):
                 if tfr.times.min() <= onset <= tfr.times.max():
-                    plt.axvline(onset, linestyle='--', color='white', linewidth=1)
+                    plt.axvline(onset, linestyle="--", color="white", linewidth=1)
                     y_text = freqs.min() + (freqs.max() - freqs.min()) * 0.02
-                    plt.text(onset, y_text, str(desc), rotation=90, verticalalignment='bottom',
-                             fontsize=8, color='white')
+                    plt.text(
+                        onset,
+                        y_text,
+                        str(desc),
+                        rotation=90,
+                        verticalalignment="bottom",
+                        fontsize=8,
+                        color="white"
+                    )
 
         plt.tight_layout()
         pdf.savefig(fig)
         plt.close(fig)
+
 
 def main():
     args, config = parse_args()
@@ -296,6 +347,9 @@ def main():
         ch for ch in config["channels"]
         if ch.startswith("U") and ch not in ("U26", "U30")
     ])
+
+
+    raw.pick_channels(["C4"])
 
     print("Remaining channels:", raw.ch_names)
 
@@ -323,8 +377,8 @@ def main():
         save_raw_timeseries(raw, pdf, title="Raw EEG (after filtering)")
 
         # Compute and save PSD overview
-        psd_obj_all = raw.compute_psd(fmin=0, fmax=200, method="welch", verbose=args.verbose)
-        save_psd_figure(psd_obj_all, pdf, title=os.path.basename(args.file) + " - PSD (0-200 Hz)")
+        psd_obj_all = raw.compute_psd(fmin=0, fmax=500, method="welch", verbose=args.verbose)
+        save_psd_figure(psd_obj_all, pdf, title=os.path.basename(args.file) + " - PSD (0-500 Hz)")
 
         # Device signal quality check
         report_lines.append("\n=== DEVICE SIGNAL QUALITY CHECK ===")
@@ -340,7 +394,7 @@ def main():
 
         report_lines.append("Computing spectrograms (Morlet)...")
         # Save TFR/Morlet spectrograms to PDF
-        plot_spectrograms_mne(raw, filename=args.file, pdf=pdf, fmin=0, fmax=60)
+        plot_spectrograms_mne(raw, filename=args.file, pdf=pdf, fmin=0, fmax=500)
         report_lines.append("STG done.")
 
         # Convert PSD from V²/Hz to µV²/Hz
@@ -376,7 +430,7 @@ def main():
             ln      = line_noise_ratio(freqs, psd_ch)
 
             if is_bad:
-                delta = theta = alpha = beta = gamma = h_gamma = 0.0
+                delta = theta = alpha = beta = h_beta = gamma = h_gamma = 0.0
             else:
                 delta   = band_power(freqs, psd_ch, 1.0, 4.0)
                 theta   = band_power(freqs, psd_ch, 4.0, 8.0)

@@ -13,12 +13,12 @@
 #             U17,  U18, U19, U20, U21, U22, U23, U24,
 #             U25, U26, U27, U28, U29, U30, U31, U32 ]
 #           1    2    3    4    5    6    7    8
-channels: [ Fp1, Fp2, F3, F4, C3, C4, P3, P4,
-            O1, O2, F7, F8, T7, T8, P7, P8,
-            Fz, Cz, Pz, Oz, FC1, FC2, CP1, CP2,
-            FC5, FC6, CP5, CP6, TP9, TP10, POz, Iz ]
+# channels: [ Fp1, Fp2, F3, F4, C3, C4, P3, P4,
+#             O1, O2, F7, F8, T7, T8, P7, P8,
+#             Fz, Cz, Pz, Oz, FC1, FC2, CP1, CP2,
+#             FC5, FC6, CP5, CP6, TP9, TP10, POz, Iz ]
 
-channels = [
+channels: [
     "Iz", "PO9", "PO10", "O1", "O2", "P7", "P3", "Pz",
     "P4", "P8", "TP9", "TP10", "CP5", "CP1", "CP2", "CP6",
     "T7", "T8", "C3", "Cz", "C4", "FC5", "FC1", "FC2",
@@ -27,7 +27,7 @@ channels = [
 
 # Bandpass filter applied on raw signal
 fmin: 1.5 
-fmax: 200
+fmax: 499
 
 # Main frequencies to be notch'ed out
-freqs_main: [ 50, 100, 150 ]
+freqs_main: [ 50, 100, 150, 200, 250, 300, 350, 400, 450]
