@@ -8,6 +8,8 @@ import os
 import html
 import uuid
 import argparse
+import re
+from collections import defaultdict
 import yaml
 import pandas as pd
 import mne
@@ -79,14 +81,14 @@ class HTMLReport:
         th { background-color: #f2f2f2; }
         pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto;}
         .caption { font-style: italic; color: #666; text-align: center; }
-        
+       
         /* Collapsible Styling */
         .collapsible { cursor: pointer; user-select: none; }
-        .collapsible::before { 
+        .collapsible::before {
             content: '\\25B6'; /* Right-pointing arrow */
-            color: #555; 
-            display: inline-block; 
-            margin-right: 10px; 
+            color: #555;
+            display: inline-block;
+            margin-right: 10px;
             transition: transform 0.2s;
         }
         .active::before { transform: rotate(90deg); } /* Down arrow */
@@ -176,6 +178,8 @@ class Report:
 
         self.html.add_object(self.prep.noisy_channels_original)
 
+        self.html.add_object(self.prep.raw.info)
+
     def add_timeseries(self):
         self.html.add_header("Timeseries")
         self.html.add_header("Timeseries 10s", level=2)
@@ -216,6 +220,78 @@ class Report:
         ).plot()
         self.html.add_plot(fig)
 
+    def add_psd_per_channel(self, fmin=0, fmax=0):
+        if fmax == 0:
+            fmax = 0.8 * self.prep.raw.info["sfreq"] / 2
+
+        self.html.add_header(f"PSD per Channel {fmin}-{fmax}Hz")
+
+        for ch in self.prep.raw.ch_names:
+            self.html.add_header(ch, level=2)
+
+            fig = self.prep.raw.compute_psd(
+                fmin=fmin,
+                fmax=fmax,
+                method="welch",
+                picks=ch,
+                verbose=self.args.verbose,
+            ).plot()
+            self.html.add_plot(fig)
+
+    def add_psd_coronal(self, fmin=0, fmax=0):
+        def get_prefix(ch):
+            m = re.match(r"^([A-Za-z]+)", ch)
+            return m.group(1) if m else ""
+
+        by_region = defaultdict(list)
+        for ch in self.prep.raw.ch_names:
+            prefix = get_prefix(ch)
+            by_region[prefix].append(ch)
+
+        if fmax == 0:
+            fmax = 0.8 * self.prep.raw.info["sfreq"] / 2
+
+        self.html.add_header(f"PSD by Coronal lines {fmin}-{fmax}Hz")
+
+        for reg in by_region:
+            self.html.add_header(" ".join(by_region[reg]), level=2)
+
+            fig = self.prep.raw.compute_psd(
+                fmin=fmin,
+                fmax=fmax,
+                method="welch",
+                picks=by_region[reg],
+                verbose=self.args.verbose,
+            ).plot()
+            self.html.add_plot(fig)
+
+    def add_psd_sagittal(self, fmin=0, fmax=0):
+        def get_suffix(ch):
+            m = re.search(r"(\d+|z)$", ch, re.IGNORECASE)
+            return m.group(1) if m else ""
+
+        by_suffix = defaultdict(list)
+        for ch in self.prep.raw.ch_names:
+            suffix = get_suffix(ch)
+            by_suffix[suffix].append(ch)
+
+        if fmax == 0:
+            fmax = 0.8 * self.prep.raw.info["sfreq"] / 2
+
+        self.html.add_header(f"PSD by Sagittal lines {fmin}-{fmax}Hz")
+
+        for reg in by_suffix:
+            self.html.add_header(" ".join(by_suffix[reg]), level=2)
+
+            fig = self.prep.raw.compute_psd(
+                fmin=fmin,
+                fmax=fmax,
+                method="welch",
+                picks=by_suffix[reg],
+                verbose=self.args.verbose,
+            ).plot()
+            self.html.add_plot(fig)
+
     def add_spectogram(self, fmin=20, fmax=0):
 
         if fmax == 0:
@@ -230,10 +306,7 @@ class Report:
 
         for ch in self.prep.raw.ch_names:
             power = raw.compute_tfr(
-                method="morlet",
-                freqs=freqs,
-                n_cycles=n_cycles,
-                picks=ch,
+                method="morlet", freqs=freqs, n_cycles=n_cycles, picks=ch, n_jobs=4
             )
 
             fig, ax = plt.subplots()
@@ -334,6 +407,10 @@ def main():
     report = Report(args, config, prep)
     report.add_timeseries()
     report.add_psd()
+    report.add_psd_coronal(0, 150)
+    report.add_psd_coronal()
+    report.add_psd_sagittal(0, 150)
+    report.add_psd_sagittal()
     report.add_spectogram()
     report.add_spectogram(50, 150)
     report.add_spectogram(100, 400)
