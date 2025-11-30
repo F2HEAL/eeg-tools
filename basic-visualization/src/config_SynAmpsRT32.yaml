@@ -25,9 +25,21 @@ channels: [
     "FC6", "FT9", "FT10", "F7", "F3", "Fz", "F4", "F8"
 ]
 
+sampling_rate: 1000  # in Hz
+
 # Bandpass filter applied on raw signal
-fmin: 1.5 
-fmax: 499
+fmin: 1
+fmax: 499   
 
 # Main frequencies to be notch'ed out
 freqs_main: [ 50, 100, 150, 200, 250, 300, 350, 400, 450]
+
+# Channel selection
+drop_channels: [] #["Iz", "P7"]
+pick_channels: [] #["P3", "FT10"]  # Leave empty to keep all channels
+
+# PSD Plot Configuration
+psd_scale: "log"           # "linear" for better peak visibility, "log" for wide dynamic range
+peak_snr_threshold: 2.5       # Minimum SNR in dB to consider a peak significant
+peak_min_distance: 5          # Minimum frequency bins between peaks
+peak_neighborhood_hz: 4.0     # Hz around peak to exclude when calculating noise floor
